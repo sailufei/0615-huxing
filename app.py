@@ -136,6 +136,7 @@ def process_images(
         result_df, total_supply, total_trans, project_total = calculate_all(
             supply_merged, trans_merged, monthly_merged, month_labels
         )
+        result_df = sort_by_area(result_df)
 
         # === 7. 生成 Excel ===
         excel_filename = f"{project_name}_{task_id}.xlsx"
@@ -316,6 +317,27 @@ def download_excel(filename: str):
     )
 
 
+def _area_sort_key(area_str: str) -> float:
+    """从面积范围字符串提取排序用的数值（取中位数）"""
+    import re
+    if not area_str:
+        return 999999
+    nums = re.findall(r'[\d.]+', str(area_str))
+    if not nums:
+        return 999999
+    nums = [float(n) for n in nums]
+    return sum(nums) / len(nums)
+
+
+def sort_by_area(df):
+    """按户型面积升序排列"""
+    if '面积范围' in df.columns:
+        df = df.copy()
+        df['_sort_key'] = df['面积范围'].apply(_area_sort_key)
+        df = df.sort_values('_sort_key').drop(columns=['_sort_key'])
+    return df
+
+
 def process_single_project(
     project_name: str, plate: str, open_date: str, plot_ratio: str,
     supply_path: str, trans_path: str,
@@ -352,6 +374,9 @@ def process_single_project(
     result_df, total_supply, total_trans, project_total = calculate_all(
         supply_merged, trans_merged, monthly_merged, month_labels
     )
+
+    # 按户型面积升序排列
+    result_df = sort_by_area(result_df)
 
     # 构建预览
     preview_rows = []
