@@ -29,6 +29,11 @@ function init() {
   document.getElementById('resetBtn').addEventListener('click', fullReset);
   // 加载队列
   renderQueue();
+  // 加载已保存项目
+  loadSavedProjects();
+  document.getElementById('searchBox').addEventListener('input', function(e) {
+    loadSavedProjects(e.target.value);
+  });
 }
 
 // === 文件上传 ===
@@ -429,12 +434,4 @@ function showLoadedResult(data) {
   window._excelUrl = data.excel_url;
 }
 
-// === 附加初始化 ===
-const origInit = init;
-init = function() {
-  origInit();
-  loadSavedProjects();
-  document.getElementById('searchBox').addEventListener('input', function(e) {
-    loadSavedProjects(e.target.value);
-  });
-};
+document.addEventListener('DOMContentLoaded', init);
