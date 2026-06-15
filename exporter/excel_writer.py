@@ -150,8 +150,6 @@ def generate_excel(
 
         cell.value = value
 
-        if col_name in MANUAL_COLS:
-            cell.fill = MANUAL_FILL
 
         if col_name in pct_cols and isinstance(value, (int, float)):
             cell.number_format = '0%'
@@ -280,8 +278,6 @@ def generate_multi_sheet_excel(all_results: list[dict], output_path: str) -> str
                     value = ''
 
                 cell.value = value
-                if col_name in MANUAL_COLS:
-                    cell.fill = MANUAL_FILL
                 if col_name in pct_cols and isinstance(value, (int, float)) and value != '':
                     cell.number_format = '0%'
                 if '均价' in col_name and isinstance(value, (int, float)):
