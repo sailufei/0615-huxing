@@ -11,13 +11,30 @@
 <div class="container">
   <header>
     <h1>房地产项目户型盘点工具</h1>
-    <p class="subtitle">上传天朗房研网截图，自动识别并生成户型盘点 Excel</p>
+    <p class="subtitle">上传天朗房研网截图，自动识别并生成户型盘点 Excel（支持多项目批量处理）</p>
   </header>
 
   <main>
-    <!-- 项目信息 -->
-    <section class="card project-info">
-      <h2>项目信息</h2>
+    <!-- 项目队列 -->
+    <section class="card" id="queueSection">
+      <div class="queue-header">
+        <h2>项目队列</h2>
+        <span id="queueCount" class="badge">0 个项目</span>
+      </div>
+      <div id="queueList" class="queue-list">
+        <p class="empty-hint">还没有添加项目，请在下方添加</p>
+      </div>
+      <div class="queue-actions" id="queueActions" style="display:none">
+        <button id="processAllBtn" class="btn-primary">全部处理并导出</button>
+        <button id="clearQueueBtn" class="btn-secondary">清空队列</button>
+      </div>
+      <div id="batchProgress" class="progress hidden"></div>
+    </section>
+
+    <!-- 添加/编辑项目 -->
+    <section class="card" id="formSection">
+      <h2 id="formTitle">添加项目</h2>
+
       <div class="form-row">
         <div class="form-group">
           <label>项目名称 <span class="required">*</span></label>
@@ -36,11 +53,6 @@
           <input type="text" id="plotRatio" placeholder="如：2.5">
         </div>
       </div>
-    </section>
-
-    <!-- 截图上传 -->
-    <section class="card upload-area">
-      <h2>截图上传</h2>
 
       <!-- 供应截图 -->
       <div class="upload-group">
@@ -50,7 +62,6 @@
           <div class="drop-content">
             <span class="icon">📊</span>
             <p>拖拽或<span class="link">点击上传</span></p>
-            <p class="hint">支持 PNG / JPG</p>
           </div>
           <img id="supplyPreview" class="preview hidden">
         </div>
@@ -64,7 +75,6 @@
           <div class="drop-content">
             <span class="icon">📈</span>
             <p>拖拽或<span class="link">点击上传</span></p>
-            <p class="hint">支持 PNG / JPG</p>
           </div>
           <img id="transPreview" class="preview hidden">
         </div>
@@ -75,7 +85,7 @@
         <h3>特定月份成交截图 <span class="required">*</span></h3>
         <div id="monthlyContainer">
           <div class="monthly-row" data-index="0">
-            <input type="text" class="month-label" placeholder="如：2024-05" value="">
+            <input type="text" class="month-label" placeholder="如：2024-05">
             <div class="drop-zone month-drop">
               <input type="file" accept="image/*" hidden>
               <div class="drop-content"><span class="icon">📅</span><p>拖拽或<span class="link">点击上传</span></p></div>
@@ -87,29 +97,18 @@
         <button id="addMonth" class="btn-secondary">+ 添加月份</button>
       </div>
 
-      <!-- 提交按钮 -->
-      <div class="submit-row">
-        <button id="submitBtn" class="btn-primary">开始处理</button>
-        <span id="progress" class="progress hidden"></span>
+      <div class="form-actions">
+        <button id="saveProjectBtn" class="btn-primary">保存到队列</button>
+        <span id="editingIndex" style="display:none"></span>
       </div>
     </section>
 
-    <!-- 结果预览 -->
+    <!-- 结果 -->
     <section id="resultSection" class="card hidden">
       <h2>处理结果</h2>
-      <div id="resultSummary" class="summary"></div>
-      <div class="result-actions">
-        <button id="downloadBtn" class="btn-primary">下载 Excel</button>
-        <button id="resetBtn" class="btn-secondary">重新开始</button>
-      </div>
       <div id="resultErrors" class="errors hidden"></div>
-      <div class="table-wrapper">
-        <table id="resultTable">
-          <thead></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <p class="legend"><span class="yellow-box"></span> 黄色底色 = 需手动填写的列</p>
+      <button id="downloadBtn" class="btn-primary">下载 Excel</button>
+      <button id="resetBtn" class="btn-secondary">重新开始</button>
     </section>
   </main>
 </div>

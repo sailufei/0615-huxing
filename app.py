@@ -7,7 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
@@ -17,7 +17,7 @@ from processor.parser import parse_to_dataframe, get_total_price
 from processor.merger import merge_supply, merge_transaction
 from processor.template import map_room_type, classify_area
 from processor.calculator import calculate_all
-from exporter.excel_writer import generate_excel
+from exporter.excel_writer import generate_excel, generate_multi_sheet_excel
 
 app = FastAPI(title="房地产户型盘点工具")
 
@@ -208,6 +208,101 @@ def process_images(
             shutil.rmtree(task_dir, ignore_errors=True)
 
 
+@app.post("/api/process-batch")
+async def process_batch(request: Request):
+    """批量处理多个项目，生成多 Sheet Excel"""
+    task_id = uuid.uuid4().hex[:8]
+    task_dir = UPLOAD_DIR / task_id
+    task_dir.mkdir(exist_ok=True)
+
+    try:
+        form = await request.form()
+        project_count = int(form.get("project_count", 0))
+        if project_count == 0:
+            raise HTTPException(400, "项目数量不能为0")
+
+        all_results = []
+        all_errors = []
+
+        for idx in range(project_count):
+            proj_name = form.get(f"name_{idx}", "")
+            plate = form.get(f"plate_{idx}", "")
+            open_date = form.get(f"open_date_{idx}", "")
+            plot_ratio = form.get(f"plot_ratio_{idx}", "")
+            supply_file = form.get(f"supply_{idx}")
+            trans_file = form.get(f"transaction_{idx}")
+
+            if not proj_name or not supply_file or not trans_file:
+                all_errors.append(f"项目{idx+1}: 缺少必填信息")
+                continue
+
+            # 保存供应截图
+            supply_path = task_dir / f"supply_{idx}{Path(supply_file.filename).suffix}"
+            with open(supply_path, "wb") as f:
+                f.write(await supply_file.read())
+
+            # 保存成交截图
+            trans_path = task_dir / f"trans_{idx}{Path(trans_file.filename).suffix}"
+            with open(trans_path, "wb") as f:
+                f.write(await trans_file.read())
+
+            # 收集月度截图
+            month_images = []
+            month_labels = []
+            mi = 0
+            while True:
+                m_label = form.get(f"month_label_{idx}_{mi}")
+                m_file = form.get(f"month_file_{idx}_{mi}")
+                if not m_label or not m_file:
+                    break
+                m_path = task_dir / f"month_{idx}_{mi}{Path(m_file.filename).suffix}"
+                with open(m_path, "wb") as f:
+                    f.write(await m_file.read())
+                month_images.append((m_label, str(m_path)))
+                month_labels.append(m_label)
+                mi += 1
+
+            if not month_labels:
+                all_errors.append(f"项目{idx+1}({proj_name}): 缺少月度截图")
+                continue
+
+            # OCR + 处理
+            try:
+                proj_result = process_single_project(
+                    proj_name, plate, open_date, plot_ratio,
+                    str(supply_path), str(trans_path),
+                    month_images, month_labels
+                )
+                all_results.append(proj_result)
+            except Exception as e:
+                all_errors.append(f"项目{idx+1}({proj_name}): {str(e)}")
+
+        if not all_results:
+            raise HTTPException(400, "所有项目处理失败: " + "; ".join(all_errors))
+
+        # 生成多 Sheet Excel
+        excel_filename = f"户型盘点_{task_id}.xlsx"
+        excel_path = OUTPUT_DIR / excel_filename
+        generate_multi_sheet_excel(all_results, str(excel_path))
+
+        return {
+            'success': True,
+            'task_id': task_id,
+            'results': [r['preview'] for r in all_results],
+            'errors': all_errors if all_errors else None,
+            'excel_url': f'/api/download/{excel_filename}',
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(500, f"批量处理失败: {str(e)}")
+    finally:
+        if task_dir.exists():
+            shutil.rmtree(task_dir, ignore_errors=True)
+
+
 @app.get("/api/download/{filename}")
 def download_excel(filename: str):
     """下载生成的 Excel 文件"""
@@ -219,6 +314,89 @@ def download_excel(filename: str):
         filename=filename,
         media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
+
+
+def process_single_project(
+    project_name: str, plate: str, open_date: str, plot_ratio: str,
+    supply_path: str, trans_path: str,
+    month_images: list, month_labels: list,
+) -> dict:
+    """处理单个项目，返回 {df, total_supply, total_trans, project_total, preview}"""
+    # OCR
+    supply_raw = ocr_engine.extract_table(supply_path, "supply")
+    trans_raw = ocr_engine.extract_table(trans_path, "transaction")
+    total_avg_price = get_total_price(trans_raw)
+
+    monthly_raw = {}
+    monthly_total_prices = {}
+    for label, path in month_images:
+        m_raw = ocr_engine.extract_table(path, "transaction")
+        monthly_raw[label] = m_raw
+        monthly_total_prices[label] = get_total_price(m_raw)
+
+    # 解析
+    supply_df = parse_to_dataframe(supply_raw, "supply")
+    trans_df = parse_to_dataframe(trans_raw, "transaction")
+    monthly_dfs = {label: parse_to_dataframe(raw, "transaction") for label, raw in monthly_raw.items()}
+
+    # 合并
+    supply_merged = merge_supply(supply_df)
+    trans_merged = merge_transaction(trans_df)
+    monthly_merged = {label: merge_transaction(mdf) if not mdf.empty else mdf for label, mdf in monthly_dfs.items()}
+
+    # 映射
+    supply_merged["户型"] = supply_merged["室厅卫"].apply(map_room_type)
+    supply_merged["建面分段"] = supply_merged["面积范围"].apply(classify_area)
+
+    # 计算
+    result_df, total_supply, total_trans, project_total = calculate_all(
+        supply_merged, trans_merged, monthly_merged, month_labels
+    )
+
+    # 构建预览
+    preview_rows = []
+    for _, row in result_df.iterrows():
+        r = {
+            '编码': row.get('编码', ''),
+            '户型': row.get('户型', ''),
+            '户型面积': row.get('面积范围', ''),
+            '建面分段': row.get('建面分段', ''),
+            '整盘套数': int(row.get('整盘套数', 0)),
+            '户配': round(float(row.get('户配', 0)), 2),
+            '供应套数': int(row.get('供应套数', 0)),
+            '成交套数': int(row.get('成交套数', 0)),
+            '成交均价': row.get('成交均价', ''),
+            '整盘去化率': round(float(row.get('整盘去化率', 0)), 2),
+            '已供去化率': round(float(row.get('已供去化率', 0)), 2),
+            '已供去化占比': round(float(row.get('已供去化占比', 0)), 2),
+            '已取证库存': int(row.get('已取证库存', 0)),
+            '整盘库存': int(row.get('整盘库存', 0)),
+        }
+        for ml in month_labels:
+            r[ml] = row.get(ml, '')
+        r['近3月月均销量'] = round(float(row.get('近3月月均销量', 0)), 1)
+        r['近3月月均销量占比'] = round(float(row.get('近3月月均销量占比', 0)), 2)
+        preview_rows.append(r)
+
+    return {
+        'df': result_df,
+        'total_supply': total_supply,
+        'total_trans': total_trans,
+        'project_total': project_total,
+        'project_name': project_name,
+        'plate': plate,
+        'competitor': project_name,
+        'open_date': open_date,
+        'plot_ratio': plot_ratio,
+        'month_labels': month_labels,
+        'total_avg_price': total_avg_price,
+        'monthly_total_prices': monthly_total_prices,
+        'preview': {
+            'project_name': project_name,
+            'summary': {'total_supply': int(total_supply), 'total_transaction': int(total_trans)},
+            'rows': preview_rows,
+        },
+    }
 
 
 # 静态文件
