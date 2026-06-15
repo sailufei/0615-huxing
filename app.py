@@ -231,27 +231,46 @@ async def process_batch(request: Request):
 
         for idx in range(project_count):
             proj_name = form.get(f"name_{idx}", "")
+            is_saved = form.get(f"is_saved_{idx}", "0") == "1"
+
+            if not proj_name:
+                all_errors.append(f"项目{idx+1}: 缺少项目名称")
+                continue
+
+            # === 已保存项目：直接从 JSON 加载 ===
+            if is_saved:
+                saved_path = PROJECTS_DIR / f"{proj_name}.json"
+                if not saved_path.exists():
+                    all_errors.append(f"项目{idx+1}({proj_name}): 保存记录不存在")
+                    continue
+                try:
+                    saved = json.loads(saved_path.read_text(encoding='utf-8'))
+                    # 从保存数据重建结果
+                    proj_result = _build_result_from_saved(saved)
+                    all_results.append(proj_result)
+                except Exception as e:
+                    all_errors.append(f"项目{idx+1}({proj_name}): {str(e)}")
+                continue
+
+            # === 新项目：OCR + 处理 ===
             plate = form.get(f"plate_{idx}", "")
             open_date = form.get(f"open_date_{idx}", "")
             plot_ratio = form.get(f"plot_ratio_{idx}", "")
             supply_file = form.get(f"supply_{idx}")
             trans_file = form.get(f"transaction_{idx}")
 
-            if not proj_name or not supply_file or not trans_file:
-                all_errors.append(f"项目{idx+1}: 缺少必填信息")
+            if not supply_file or not trans_file:
+                all_errors.append(f"项目{idx+1}: 缺少必填截图")
                 continue
 
-            # 保存供应截图
             supply_path = task_dir / f"supply_{idx}{Path(supply_file.filename).suffix}"
             with open(supply_path, "wb") as f:
                 f.write(await supply_file.read())
 
-            # 保存成交截图
             trans_path = task_dir / f"trans_{idx}{Path(trans_file.filename).suffix}"
             with open(trans_path, "wb") as f:
                 f.write(await trans_file.read())
 
-            # 收集月度截图
             month_images = []
             month_labels = []
             mi = 0
@@ -271,7 +290,6 @@ async def process_batch(request: Request):
                 all_errors.append(f"项目{idx+1}({proj_name}): 缺少月度截图")
                 continue
 
-            # OCR + 处理
             try:
                 proj_result = process_single_project(
                     proj_name, plate, open_date, plot_ratio,
@@ -279,7 +297,6 @@ async def process_batch(request: Request):
                     month_images, month_labels
                 )
                 all_results.append(proj_result)
-                # 自动保存项目结果（同名覆盖）
                 save_data = {
                     'project_name': proj_name,
                     'plate': plate,
@@ -375,6 +392,36 @@ def save_project_result(project_name: str, result_data: dict):
     """保存项目结果（同名覆盖）"""
     file_path = PROJECTS_DIR / f"{project_name}.json"
     file_path.write_text(json.dumps(result_data, ensure_ascii=False, indent=2), encoding='utf-8')
+
+
+def _build_result_from_saved(saved: dict) -> dict:
+    """从保存的 JSON 重建结果（复用已计算的数据，无需重新 OCR）"""
+    rows = saved.get('rows', [])
+    df = pd.DataFrame(rows)
+    total_supply = saved['summary']['total_supply']
+    total_trans = saved['summary']['total_transaction']
+    project_total = sum(r.get('整盘套数', 0) for r in rows)
+    month_labels = saved.get('month_labels', [])
+
+    return {
+        'df': df,
+        'total_supply': total_supply,
+        'total_trans': total_trans,
+        'project_total': project_total,
+        'project_name': saved.get('project_name', ''),
+        'plate': saved.get('plate', ''),
+        'competitor': saved.get('project_name', ''),
+        'open_date': saved.get('open_date', ''),
+        'plot_ratio': saved.get('plot_ratio', ''),
+        'month_labels': month_labels,
+        'total_avg_price': saved.get('total_avg_price', ''),
+        'monthly_total_prices': saved.get('monthly_total_prices', {}),
+        'preview': {
+            'project_name': saved.get('project_name', ''),
+            'summary': saved['summary'],
+            'rows': rows,
+        },
+    }
 
 
 def _regenerate_excel(data: dict, output_path: str):

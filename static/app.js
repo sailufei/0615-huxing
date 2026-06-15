@@ -167,7 +167,7 @@ function renderQueue() {
       <div class="queue-item">
         <div class="q-info">
           <div class="q-name">${p.name}</div>
-          <div class="q-detail">板块: ${p.plate || '-'} | 开盘: ${p.openDate || '-'} | 容积率: ${p.plotRatio || '-'} | 月度截图: ${p.monthlyFiles.length}张</div>
+          <div class="q-detail">${p.isSaved ? '【已保存项目】' : `板块: ${p.plate || '-'} | 开盘: ${p.openDate || '-'} | 容积率: ${p.plotRatio || '-'} | 月度截图: ${p.monthlyFiles.length}张`}</div>
         </div>
         <div class="q-actions">
           <button class="btn-sm" onclick="editProject(${i})">编辑</button>
@@ -275,15 +275,18 @@ async function processAll() {
   for (let i = 0; i < projectQueue.length; i++) {
     const p = projectQueue[i];
     formData.append(`name_${i}`, p.name);
-    formData.append(`plate_${i}`, p.plate);
-    formData.append(`open_date_${i}`, p.openDate);
-    formData.append(`plot_ratio_${i}`, p.plotRatio);
-    formData.append(`supply_${i}`, p.supplyFile);
-    formData.append(`transaction_${i}`, p.transFile);
-    p.monthlyFiles.forEach((m, mi) => {
-      formData.append(`month_file_${i}_${mi}`, m.file);
-      formData.append(`month_label_${i}_${mi}`, m.label);
-    });
+    formData.append(`is_saved_${i}`, p.isSaved ? '1' : '0');
+    if (!p.isSaved) {
+      formData.append(`plate_${i}`, p.plate);
+      formData.append(`open_date_${i}`, p.openDate);
+      formData.append(`plot_ratio_${i}`, p.plotRatio);
+      formData.append(`supply_${i}`, p.supplyFile);
+      formData.append(`transaction_${i}`, p.transFile);
+      p.monthlyFiles.forEach((m, mi) => {
+        formData.append(`month_file_${i}_${mi}`, m.file);
+        formData.append(`month_label_${i}_${mi}`, m.label);
+      });
+    }
     progress.textContent = `处理中... (${i + 1}/${projectQueue.length})`;
   }
 
@@ -356,6 +359,7 @@ function renderSavedList(projects) {
       <div class="q-actions">
         <button class="btn-sm" onclick="loadProject('${p.name}')">查看</button>
         <button class="btn-sm" onclick="downloadProject('${p.name}')">下载</button>
+        <button class="btn-sm" onclick="addSavedToQueue('${p.name}')">加入队列</button>
         <button class="btn-sm danger" onclick="deleteProject('${p.name}')">删除</button>
       </div>
     </div>
@@ -383,6 +387,16 @@ async function downloadProject(name) {
   } catch (err) {
     alert('下载失败: ' + err.message);
   }
+}
+
+function addSavedToQueue(name) {
+  // 检查是否已在队列中
+  if (projectQueue.some(p => p.name === name && p.isSaved)) {
+    alert('该项目已在队列中');
+    return;
+  }
+  projectQueue.push({ name, isSaved: true, plate: '', openDate: '', plotRatio: '', supplyFile: null, transFile: null, monthlyFiles: [] });
+  renderQueue();
 }
 
 async function deleteProject(name) {
