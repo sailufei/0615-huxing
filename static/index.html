@@ -15,6 +15,20 @@
   </header>
 
   <main>
+    <!-- 已保存项目 -->
+    <section class="card" id="savedSection">
+      <div class="queue-header">
+        <h2>已保存项目</h2>
+        <span id="savedCount" class="badge">加载中...</span>
+      </div>
+      <div style="margin-bottom:12px">
+        <input type="text" id="searchBox" placeholder="搜索项目名称..." style="width:100%;padding:8px 12px;border:1px solid #d9d9d9;border-radius:6px;font-size:14px">
+      </div>
+      <div id="savedList" class="queue-list">
+        <p class="empty-hint">暂无保存的项目</p>
+      </div>
+    </section>
+
     <!-- 项目队列 -->
     <section class="card" id="queueSection">
       <div class="queue-header">

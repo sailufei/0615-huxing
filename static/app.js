@@ -322,4 +322,119 @@ function fullReset() {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-document.addEventListener('DOMContentLoaded', init);
+// === 已保存项目 ===
+async function loadSavedProjects(filter = '') {
+  try {
+    const resp = await fetch('/api/projects');
+    const data = await resp.json();
+    const projects = data.projects || [];
+    const filtered = filter ? projects.filter(p => p.name.toLowerCase().includes(filter.toLowerCase())) : projects;
+    renderSavedList(filtered);
+    document.getElementById('savedCount').textContent = projects.length + ' 个项目';
+  } catch (err) {
+    document.getElementById('savedList').innerHTML = '<p class="empty-hint">加载失败</p>';
+  }
+}
+
+function renderSavedList(projects) {
+  const list = document.getElementById('savedList');
+  if (projects.length === 0) {
+    list.innerHTML = '<p class="empty-hint">暂无保存的项目</p>';
+    return;
+  }
+  list.innerHTML = projects.map(p => `
+    <div class="queue-item">
+      <div class="q-info">
+        <div class="q-name">${p.name}</div>
+        <div class="q-detail">更新: ${p.updated} | 供应: ${p.total_supply}套 | 成交: ${p.total_transaction}套</div>
+      </div>
+      <div class="q-actions">
+        <button class="btn-sm" onclick="loadProject('${p.name}')">查看</button>
+        <button class="btn-sm" onclick="downloadProject('${p.name}')">下载</button>
+        <button class="btn-sm danger" onclick="deleteProject('${p.name}')">删除</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function loadProject(name) {
+  try {
+    const resp = await fetch('/api/projects/' + encodeURIComponent(name));
+    const data = await resp.json();
+    if (!data.success) throw new Error('加载失败');
+
+    window._resultData = data.data;
+    showLoadedResult(data);
+  } catch (err) {
+    alert('加载失败: ' + err.message);
+  }
+}
+
+async function downloadProject(name) {
+  try {
+    const resp = await fetch('/api/projects/' + encodeURIComponent(name));
+    const data = await resp.json();
+    if (data.excel_url) window.open(data.excel_url, '_blank');
+  } catch (err) {
+    alert('下载失败: ' + err.message);
+  }
+}
+
+async function deleteProject(name) {
+  if (!confirm('确定删除项目 "' + name + '"？此操作不可恢复。')) return;
+  try {
+    await fetch('/api/projects/' + encodeURIComponent(name), { method: 'DELETE' });
+    loadSavedProjects(document.getElementById('searchBox').value);
+  } catch (err) {
+    alert('删除失败');
+  }
+}
+
+function showLoadedResult(data) {
+  const section = document.getElementById('resultSection');
+  section.classList.remove('hidden');
+
+  document.getElementById('resultSummary').innerHTML = `
+    <div>项目: <span>${data.project_name}</span>（已保存）</div>
+    <div>供应: <span>${data.data.summary.total_supply}</span> 套 | 成交: <span>${data.data.summary.total_transaction}</span> 套</div>
+  `;
+
+  document.getElementById('resultErrors').classList.add('hidden');
+
+  const manualCols = new Set(['板块', '竞品', '业态']);
+  const monthLabels = data.data.month_labels || [];
+  const columns = ['板块','竞品','业态','编码','户型','户型面积','建面分段',
+    '整盘套数','户配','供应套数','成交套数','成交均价',
+    '整盘去化率','已供去化率','已供去化占比',
+    ...monthLabels,
+    '近3月月均销量','近3月月均销量占比','已取证库存','整盘库存'];
+
+  const thead = document.querySelector('#resultTable thead');
+  thead.innerHTML = '<tr>' + columns.map(c => `<th>${c}</th>`).join('') + '</tr>';
+
+  const tbody = document.querySelector('#resultTable tbody');
+  const rows = data.data.rows || [];
+  tbody.innerHTML = rows.map(row => {
+    return '<tr>' + columns.map(col => {
+      let val = row[col] !== undefined ? row[col] : '';
+      if (['户配','整盘去化率','已供去化率','已供去化占比','近3月月均销量占比'].includes(col) && val !== '') {
+        val = (parseFloat(val) * 100).toFixed(0) + '%';
+      }
+      const cls = manualCols.has(col) ? ' class="manual-cell"' : '';
+      return `<td${cls}>${val !== null && val !== undefined ? val : ''}</td>`;
+    }).join('') + '</tr>';
+  }).join('');
+
+  section.scrollIntoView({ behavior: 'smooth' });
+  window._excelUrl = data.excel_url;
+}
+
+// === 附加初始化 ===
+const origInit = init;
+init = function() {
+  origInit();
+  loadSavedProjects();
+  document.getElementById('searchBox').addEventListener('input', function(e) {
+    loadSavedProjects(e.target.value);
+  });
+};

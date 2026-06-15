@@ -1,8 +1,10 @@
 """FastAPI 主应用 — 房地产户型盘点工具"""
 import os
+import json
 import traceback
 import uuid
 import shutil
+from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
@@ -25,8 +27,10 @@ app = FastAPI(title="房地产户型盘点工具")
 BASE_DIR = Path(__file__).parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 OUTPUT_DIR = BASE_DIR / "outputs"
+PROJECTS_DIR = BASE_DIR / "projects"
 UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
+PROJECTS_DIR.mkdir(exist_ok=True)
 
 # OCR 引擎（通义千问 Qwen-VL — 同步调用）
 ocr_engine = QwenVisionOCR()
@@ -275,6 +279,17 @@ async def process_batch(request: Request):
                     month_images, month_labels
                 )
                 all_results.append(proj_result)
+                # 自动保存项目结果（同名覆盖）
+                save_data = {
+                    'project_name': proj_name,
+                    'plate': plate,
+                    'month_labels': month_labels,
+                    'summary': proj_result['preview']['summary'],
+                    'rows': proj_result['preview']['rows'],
+                    'total_avg_price': proj_result.get('total_avg_price', ''),
+                    'monthly_total_prices': proj_result.get('monthly_total_prices', {}),
+                }
+                save_project_result(proj_name, save_data)
             except Exception as e:
                 all_errors.append(f"项目{idx+1}({proj_name}): {str(e)}")
 
@@ -302,6 +317,93 @@ async def process_batch(request: Request):
     finally:
         if task_dir.exists():
             shutil.rmtree(task_dir, ignore_errors=True)
+
+
+@app.get("/api/projects")
+def list_projects():
+    """列出所有已保存的项目"""
+    projects = []
+    for f in sorted(PROJECTS_DIR.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
+        try:
+            data = json.loads(f.read_text(encoding='utf-8'))
+            projects.append({
+                'name': f.stem,
+                'updated': datetime.fromtimestamp(f.stat().st_mtime).strftime('%Y-%m-%d %H:%M'),
+                'total_supply': data.get('summary', {}).get('total_supply', 0),
+                'total_transaction': data.get('summary', {}).get('total_transaction', 0),
+            })
+        except Exception:
+            pass
+    return {'projects': projects}
+
+
+@app.get("/api/projects/{name}")
+def get_project(name: str):
+    """加载已保存项目的完整结果 + 重新生成 Excel"""
+    file_path = PROJECTS_DIR / f"{name}.json"
+    if not file_path.exists():
+        raise HTTPException(404, "项目不存在")
+
+    data = json.loads(file_path.read_text(encoding='utf-8'))
+
+    # 重新生成 Excel
+    excel_filename = f"{name}_{uuid.uuid4().hex[:6]}.xlsx"
+    excel_path = OUTPUT_DIR / excel_filename
+
+    # 从保存的数据重建 DataFrame 并生成 Excel
+    _regenerate_excel(data, str(excel_path))
+
+    return {
+        'success': True,
+        'project_name': name,
+        'data': data,
+        'excel_url': f'/api/download/{excel_filename}',
+    }
+
+
+@app.delete("/api/projects/{name}")
+def delete_project(name: str):
+    """删除已保存的项目"""
+    file_path = PROJECTS_DIR / f"{name}.json"
+    if file_path.exists():
+        file_path.unlink()
+        return {'success': True}
+    raise HTTPException(404, "项目不存在")
+
+
+def save_project_result(project_name: str, result_data: dict):
+    """保存项目结果（同名覆盖）"""
+    file_path = PROJECTS_DIR / f"{project_name}.json"
+    file_path.write_text(json.dumps(result_data, ensure_ascii=False, indent=2), encoding='utf-8')
+
+
+def _regenerate_excel(data: dict, output_path: str):
+    """从保存的 JSON 重建 Excel 文件"""
+    # 重建简单 DataFrame 用于 generate_excel
+    rows = data.get('rows', [])
+    if not rows:
+        return
+    df = pd.DataFrame(rows)
+    month_labels = data.get('month_labels', [])
+    total_supply = data['summary']['total_supply']
+    total_trans = data['summary']['total_transaction']
+    project_total = sum(r.get('整盘套数', 0) for r in rows)
+    project_name = data.get('project_name', '')
+    plate = data.get('plate', '')
+
+    generate_excel(
+        df=df,
+        total_supply=total_supply,
+        total_trans=total_trans,
+        project_total=project_total,
+        month_labels=month_labels,
+        project_name=project_name,
+        output_path=output_path,
+        plate=plate,
+        competitor=project_name,
+        total_avg_price=data.get('total_avg_price', ''),
+        monthly_total_prices=data.get('monthly_total_prices', {}),
+    )
 
 
 @app.get("/api/download/{filename}")
