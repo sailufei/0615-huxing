@@ -7,16 +7,16 @@ from openpyxl.utils import get_column_letter
 
 HEADER_FILL = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
 HEADER_FONT = Font(name='微软雅黑', bold=True, size=10, color='FFFFFF')
-MANUAL_FILL = PatternFill(start_color='FFFF00', end_color='FFFF00', fill_type='solid')
 TOTAL_FONT = Font(name='微软雅黑', bold=True, size=10)
 NORMAL_FONT = Font(name='微软雅黑', size=10)
+PLATE_FONT = Font(name='微软雅黑', bold=True, size=10, color='8B0000')  # 板块-深红加粗
+COMPETITOR_FONT = Font(name='微软雅黑', bold=True, size=10)  # 竞品-加粗
+MONTHLY_TOTAL_FONT = Font(name='微软雅黑', bold=True, size=10, color='8B0000')  # 月度合计-深红加粗
 THIN_BORDER = Border(
     left=Side(style='thin'), right=Side(style='thin'),
     top=Side(style='thin'), bottom=Side(style='thin')
 )
 CENTER_WRAP = Alignment(horizontal='center', vertical='center', wrap_text=True)
-
-MANUAL_COLS = {'板块', '竞品', '业态'}
 
 
 def generate_excel(
@@ -87,8 +87,6 @@ def generate_excel(
 
             cell.value = value
 
-            if col_name in MANUAL_COLS:
-                cell.fill = MANUAL_FILL
 
             if col_name in pct_cols and isinstance(value, (int, float)) and value != '':
                 cell.number_format = '0%'  # 整数百分比
@@ -146,6 +144,7 @@ def generate_excel(
             value = total_values[col_name]
         elif col_name in month_labels:
             value = monthly_totals.get(col_name, '')
+            cell.font = MONTHLY_TOTAL_FONT
         else:
             value = ''
 
@@ -171,7 +170,9 @@ def generate_excel(
     plate_col = all_cols.index('板块') + 1
     if plate:
         ws.merge_cells(start_row=2, start_column=plate_col, end_row=total_row, end_column=plate_col)
-        ws.cell(row=2, column=plate_col).value = plate
+        c = ws.cell(row=2, column=plate_col)
+        c.value = plate
+        c.font = PLATE_FONT
 
     # === 合并竞品列（项目名称 + 开盘时间 + 容积率，换行分隔）===
     competitor_col = all_cols.index('竞品') + 1
@@ -181,7 +182,9 @@ def generate_excel(
     if plot_ratio:
         competitor_content += f"\n{plot_ratio}"
     ws.merge_cells(start_row=2, start_column=competitor_col, end_row=total_row, end_column=competitor_col)
-    ws.cell(row=2, column=competitor_col).value = competitor_content
+    c = ws.cell(row=2, column=competitor_col)
+    c.value = competitor_content
+    c.font = COMPETITOR_FONT
 
     # === 列宽 ===
     col_widths = {
@@ -330,12 +333,11 @@ def generate_multi_sheet_excel(all_results: list[dict], output_path: str) -> str
                 value = total_values[col_name]
             elif col_name in month_labels:
                 value = monthly_totals.get(col_name, '')
+                cell.font = MONTHLY_TOTAL_FONT
             else:
                 value = ''
 
             cell.value = value
-            if col_name in MANUAL_COLS:
-                cell.fill = MANUAL_FILL
             if col_name in pct_cols and isinstance(value, (int, float)):
                 cell.number_format = '0%'
 
@@ -352,7 +354,9 @@ def generate_multi_sheet_excel(all_results: list[dict], output_path: str) -> str
         plate_col = all_cols.index('板块') + 1
         if plate:
             ws.merge_cells(start_row=data_start, start_column=plate_col, end_row=total_row, end_column=plate_col)
-            ws.cell(row=data_start, column=plate_col).value = plate
+            pc = ws.cell(row=data_start, column=plate_col)
+            pc.value = plate
+            pc.font = PLATE_FONT
 
         # 竞品列合并
         competitor_col = all_cols.index('竞品') + 1
@@ -362,7 +366,9 @@ def generate_multi_sheet_excel(all_results: list[dict], output_path: str) -> str
         if plot_ratio:
             competitor_content += f"\n{plot_ratio}"
         ws.merge_cells(start_row=data_start, start_column=competitor_col, end_row=total_row, end_column=competitor_col)
-        ws.cell(row=data_start, column=competitor_col).value = competitor_content
+        cc = ws.cell(row=data_start, column=competitor_col)
+        cc.value = competitor_content
+        cc.font = COMPETITOR_FONT
 
         current_row += 1  # 合计行之后
 
