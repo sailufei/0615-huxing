@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>房地产户型盘点工具</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>房地产项目户型盘点工具</h1>
+    <p class="subtitle">上传天朗房研网截图，自动识别并生成户型盘点 Excel</p>
+  </header>
+
+  <main>
+    <!-- 项目信息 -->
+    <section class="card project-info">
+      <h2>项目信息</h2>
+      <div class="form-row">
+        <div class="form-group">
+          <label>项目名称 <span class="required">*</span></label>
+          <input type="text" id="projectName" placeholder="如：华曦府金安">
+        </div>
+        <div class="form-group">
+          <label>板块</label>
+          <input type="text" id="plate" placeholder="手动填写">
+        </div>
+        <div class="form-group">
+          <label>开盘时间</label>
+          <input type="text" id="openDate" placeholder="如：2024-06">
+        </div>
+        <div class="form-group">
+          <label>容积率</label>
+          <input type="text" id="plotRatio" placeholder="如：2.5">
+        </div>
+      </div>
+    </section>
+
+    <!-- 截图上传 -->
+    <section class="card upload-area">
+      <h2>截图上传</h2>
+
+      <!-- 供应截图 -->
+      <div class="upload-group">
+        <h3>整盘供应截图 <span class="required">*</span></h3>
+        <div class="drop-zone" id="supplyDrop">
+          <input type="file" id="supplyFile" accept="image/*" hidden>
+          <div class="drop-content">
+            <span class="icon">📊</span>
+            <p>拖拽或<span class="link">点击上传</span></p>
+            <p class="hint">支持 PNG / JPG</p>
+          </div>
+          <img id="supplyPreview" class="preview hidden">
+        </div>
+      </div>
+
+      <!-- 成交截图 -->
+      <div class="upload-group">
+        <h3>整盘成交截图 <span class="required">*</span></h3>
+        <div class="drop-zone" id="transDrop">
+          <input type="file" id="transFile" accept="image/*" hidden>
+          <div class="drop-content">
+            <span class="icon">📈</span>
+            <p>拖拽或<span class="link">点击上传</span></p>
+            <p class="hint">支持 PNG / JPG</p>
+          </div>
+          <img id="transPreview" class="preview hidden">
+        </div>
+      </div>
+
+      <!-- 月度成交截图 -->
+      <div class="upload-group">
+        <h3>特定月份成交截图 <span class="required">*</span></h3>
+        <div id="monthlyContainer">
+          <div class="monthly-row" data-index="0">
+            <input type="text" class="month-label" placeholder="如：2024-05" value="">
+            <div class="drop-zone month-drop">
+              <input type="file" accept="image/*" hidden>
+              <div class="drop-content"><span class="icon">📅</span><p>拖拽或<span class="link">点击上传</span></p></div>
+              <img class="preview hidden">
+            </div>
+            <button class="btn-remove" title="移除">×</button>
+          </div>
+        </div>
+        <button id="addMonth" class="btn-secondary">+ 添加月份</button>
+      </div>
+
+      <!-- 提交按钮 -->
+      <div class="submit-row">
+        <button id="submitBtn" class="btn-primary">开始处理</button>
+        <span id="progress" class="progress hidden"></span>
+      </div>
+    </section>
+
+    <!-- 结果预览 -->
+    <section id="resultSection" class="card hidden">
+      <h2>处理结果</h2>
+      <div id="resultSummary" class="summary"></div>
+      <div class="result-actions">
+        <button id="downloadBtn" class="btn-primary">下载 Excel</button>
+        <button id="resetBtn" class="btn-secondary">重新开始</button>
+      </div>
+      <div id="resultErrors" class="errors hidden"></div>
+      <div class="table-wrapper">
+        <table id="resultTable">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="legend"><span class="yellow-box"></span> 黄色底色 = 需手动填写的列</p>
+    </section>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# API Key
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Uploads / Outputs
+uploads/
+outputs/
+
+# IDE
+.vscode/
+.idea/
