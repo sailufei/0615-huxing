@@ -309,7 +309,8 @@ async def process_batch(request: Request):
                 }
                 save_project_result(proj_name, save_data)
             except Exception as e:
-                all_errors.append(f"项目{idx+1}({proj_name}): {str(e)}")
+                tb = traceback.format_exc()
+                all_errors.append(f"项目{idx+1}({proj_name}): {str(e)} | 详情: {tb[-200:]}")
 
         if not all_results:
             raise HTTPException(400, "所有项目处理失败: " + "; ".join(all_errors))
@@ -503,6 +504,10 @@ def process_single_project(
     # OCR
     supply_raw = ocr_engine.extract_table(supply_path, "supply")
     trans_raw = ocr_engine.extract_table(trans_path, "transaction")
+
+    # 数据清洗：过滤掉空数据行
+    supply_raw = [r for r in supply_raw if r.get("居室", "").strip()]
+    trans_raw = [r for r in trans_raw if r.get("居室", "").strip()]
     total_avg_price = get_total_price(trans_raw)
 
     monthly_raw = {}
