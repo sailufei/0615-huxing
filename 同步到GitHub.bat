@@ -1,5 +1,5 @@
 @echo off
-cd /d "d:\guojiabao008\Desktop\Cursor workspace"
+cd /d "d:\guojiabao008\Desktop\Cursor workspace\户型盘点工具"
 echo ========================================
 echo   户型盘点工具 - 一键同步到 GitHub
 echo ========================================
