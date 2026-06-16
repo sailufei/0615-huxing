@@ -399,6 +399,9 @@ def _build_result_from_saved(saved: dict) -> dict:
     """从保存的 JSON 重建结果（复用已计算的数据，无需重新 OCR）"""
     rows = saved.get('rows', [])
     df = pd.DataFrame(rows)
+    # 字段名映射：保存的 JSON 用 "户型面积"，Excel 生成器期待 "面积范围"
+    if '户型面积' in df.columns and '面积范围' not in df.columns:
+        df['面积范围'] = df['户型面积']
     total_supply = saved['summary']['total_supply']
     total_trans = saved['summary']['total_transaction']
     project_total = sum(r.get('整盘套数', 0) for r in rows)
@@ -432,6 +435,9 @@ def _regenerate_excel(data: dict, output_path: str):
     if not rows:
         return
     df = pd.DataFrame(rows)
+    # 字段名映射
+    if '户型面积' in df.columns and '面积范围' not in df.columns:
+        df['面积范围'] = df['户型面积']
     month_labels = data.get('month_labels', [])
     total_supply = data['summary']['total_supply']
     total_trans = data['summary']['total_transaction']
