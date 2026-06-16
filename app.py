@@ -505,9 +505,19 @@ def process_single_project(
     supply_raw = ocr_engine.extract_table(supply_path, "supply")
     trans_raw = ocr_engine.extract_table(trans_path, "transaction")
 
-    # 数据清洗：过滤掉空数据行
+    # 数据清洗：过滤掉空数据行，所有数值字段确保为数字
     supply_raw = [r for r in supply_raw if r.get("居室", "").strip()]
     trans_raw = [r for r in trans_raw if r.get("居室", "").strip()]
+
+    # 确保所有数值字段是数字类型（防止空字符串进入 DataFrame 导致 float64 错误）
+    for row in supply_raw:
+        for key in ['供应套数']:
+            val = row.get(key, 0)
+            row[key] = float(val) if val != '' and val is not None else 0.0
+    for row in trans_raw:
+        for key in ['成交套数', '成交面积', '成交均价']:
+            val = row.get(key, 0)
+            row[key] = float(val) if val != '' and val is not None else 0.0
     total_avg_price = get_total_price(trans_raw)
 
     monthly_raw = {}
