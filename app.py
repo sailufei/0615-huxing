@@ -486,6 +486,19 @@ def _area_sort_key(area_str: str) -> float:
     return sum(nums) / len(nums)
 
 
+def _sanitize_rows(rows: list[dict], numeric_keys: list[str]) -> list[dict]:
+    """清洗 OCR 数据：过滤空行，强制数值转换"""
+    rows = [r for r in rows if r.get("居室", "").strip()]
+    for row in rows:
+        for key in numeric_keys:
+            val = row.get(key, 0)
+            try:
+                row[key] = float(val) if val != '' and val is not None else 0.0
+            except (ValueError, TypeError):
+                row[key] = 0.0
+    return rows
+
+
 def sort_by_area(df):
     """按户型面积升序排列"""
     if '面积范围' in df.columns:
@@ -505,26 +518,16 @@ def process_single_project(
     supply_raw = ocr_engine.extract_table(supply_path, "supply")
     trans_raw = ocr_engine.extract_table(trans_path, "transaction")
 
-    # 数据清洗：过滤掉空数据行，所有数值字段确保为数字
-    supply_raw = [r for r in supply_raw if r.get("居室", "").strip()]
-    trans_raw = [r for r in trans_raw if r.get("居室", "").strip()]
-
-    # 确保所有数值字段是数字类型（防止空字符串进入 DataFrame 导致 float64 错误）
-    for row in supply_raw:
-        for key in ['供应套数']:
-            val = row.get(key, 0)
-            row[key] = float(val) if val != '' and val is not None else 0.0
-    for row in trans_raw:
-        for key in ['成交套数', '成交面积', '成交均价']:
-            val = row.get(key, 0)
-            row[key] = float(val) if val != '' and val is not None else 0.0
+    # 数据清洗：过滤空行，强制数值转换（覆盖所有路径）
+    supply_raw = _sanitize_rows(supply_raw, ['供应套数'])
+    trans_raw = _sanitize_rows(trans_raw, ['成交套数', '成交面积', '成交均价'])
     total_avg_price = get_total_price(trans_raw)
 
     monthly_raw = {}
     monthly_total_prices = {}
     for label, path in month_images:
         m_raw = ocr_engine.extract_table(path, "transaction")
-        monthly_raw[label] = m_raw
+        monthly_raw[label] = _sanitize_rows(m_raw, ['成交套数', '成交面积', '成交均价'])
         monthly_total_prices[label] = get_total_price(m_raw)
 
     # 解析
