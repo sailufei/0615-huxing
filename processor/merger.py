@@ -18,8 +18,8 @@ def extract_code(room_text: str) -> str:
         "复式"               → "复式"
     """
     text = room_text.strip()
-    # 先去掉 -顶/-底 后缀
-    text = re.sub(r'[-][顶底]\d*', '', text)
+    # 去掉 -顶/-底/-顶1/-底2 以及 顶层/底层/顶层1/底层2 后缀
+    text = re.sub(r'-?[顶底]层?\d*', '', text)
 
     # 找最后一个空格
     last_space = text.rfind(' ')
@@ -38,8 +38,8 @@ def extract_room_detail(room_text: str) -> str:
         "复式"               → "复式"
     """
     text = room_text.strip()
-    # 先去掉 -顶/-底 后缀
-    text = re.sub(r'[-][顶底]\d*', '', text)
+    # 去掉顶/底后缀（-底、-底1、底层、底层1、-顶、顶层 等）
+    text = re.sub(r'-?[顶底]层?\d*', '', text)
 
     last_space = text.rfind(' ')
     if last_space > 0:
@@ -48,8 +48,11 @@ def extract_room_detail(room_text: str) -> str:
 
 
 def get_bottom_number(name: str) -> int | None:
-    """获取 -底 后缀的数字"""
-    m = re.search(r'[-]底(\d*)', name.strip())
+    """获取底后缀的数字（支持 -底、-底1、底层、底层1 等）"""
+    m = re.search(r'-?底层?(\d*)', name.strip())
+    # 也匹配旧格式
+    if not m:
+        m = re.search(r'-底(\d*)', name.strip())
     if m:
         if m.group(1) == '':
             return 0
@@ -58,8 +61,8 @@ def get_bottom_number(name: str) -> int | None:
 
 
 def is_variant(name: str) -> bool:
-    """判断是否是变体（含 -顶 或 -底 后缀）"""
-    return bool(re.search(r'[-][顶底]\d*', name.strip()))
+    """判断是否是变体（含顶/底后缀，支持 -底、底层、-顶、顶层 等）"""
+    return bool(re.search(r'-?[顶底]层?\d*', name.strip()))
 
 
 def merge_supply(df: pd.DataFrame) -> pd.DataFrame:
