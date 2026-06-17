@@ -1,5 +1,6 @@
 """FastAPI 主应用 — 房地产户型盘点工具"""
 import os
+import re
 import json
 import traceback
 import uuid
@@ -487,9 +488,12 @@ def _area_sort_key(area_str: str) -> float:
 
 
 def _sanitize_rows(rows: list[dict], numeric_keys: list[str]) -> list[dict]:
-    """清洗 OCR 数据：过滤空行，强制数值转换"""
+    """清洗 OCR 数据：过滤空行，强制数值转换，去除面积中的㎡符号"""
     rows = [r for r in rows if r.get("居室", "").strip()]
     for row in rows:
+        # 去除面积范围中的 ㎡ m² m 等后缀
+        if '面积范围' in row:
+            row['面积范围'] = re.sub(r'[㎡m²\s]', '', str(row['面积范围']))
         for key in numeric_keys:
             val = row.get(key, 0)
             try:
