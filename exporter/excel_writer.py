@@ -9,14 +9,82 @@ HEADER_FILL = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='s
 HEADER_FONT = Font(name='微软雅黑', bold=True, size=10, color='FFFFFF')
 TOTAL_FONT = Font(name='微软雅黑', bold=True, size=10)
 NORMAL_FONT = Font(name='微软雅黑', size=10)
-PLATE_FONT = Font(name='微软雅黑', bold=True, size=10, color='8B0000')  # 板块-深红加粗
-COMPETITOR_FONT = Font(name='微软雅黑', bold=True, size=10)  # 竞品-加粗
-MONTHLY_TOTAL_FONT = Font(name='微软雅黑', bold=True, size=10, color='8B0000')  # 月度合计-深红加粗
+PLATE_FONT = Font(name='微软雅黑', bold=True, size=10, color='8B0000')
+COMPETITOR_FONT = Font(name='微软雅黑', bold=True, size=10)
+MONTHLY_TOTAL_FONT = Font(name='微软雅黑', bold=True, size=10, color='8B0000')
 THIN_BORDER = Border(
     left=Side(style='thin'), right=Side(style='thin'),
     top=Side(style='thin'), bottom=Side(style='thin')
 )
 CENTER_WRAP = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+# 非月份列（需要每户型 2 行合并）
+NON_MONTH_COLS = {'板块', '竞品', '业态', '编码', '户型', '户型面积', '建面分段',
+                  '整盘套数', '户配', '供应套数', '成交套数', '成交均价',
+                  '整盘去化率', '已供去化率', '已供去化占比',
+                  '已取证库存', '整盘库存', '近3月月均销量', '近3月月均销量占比'}
+PCT_COLS = {'户配', '整盘去化率', '已供去化率', '已供去化占比', '近3月月均销量占比'}
+
+
+def _make_base_cols():
+    return ['板块', '竞品', '业态', '编码', '户型', '户型面积', '建面分段',
+            '整盘套数', '户配', '供应套数', '成交套数', '成交均价',
+            '整盘去化率', '已供去化率', '已供去化占比']
+
+
+def _make_trailing_cols():
+    return ['近3月月均销量', '近3月月均销量占比', '已取证库存', '整盘库存']
+
+
+def _make_month_cols(month_labels):
+    """每个月份拆为 2 列：套数 + 均价"""
+    cols = []
+    for ml in month_labels:
+        cols.append(f"{ml}_套数")
+        cols.append(f"{ml}_均价")
+    return cols
+
+
+def _write_cell(ws, row, col, value, font=None, fmt=None, merge_info=None):
+    """写单元格，统一字体边框"""
+    cell = ws.cell(row=row, column=col)
+    cell.value = value
+    cell.font = font or NORMAL_FONT
+    cell.border = THIN_BORDER
+    cell.alignment = CENTER_WRAP
+    if fmt:
+        cell.number_format = fmt
+    return cell
+
+
+def _write_data_row(ws, excel_row, all_cols, row_data, month_labels, is_price_row=False):
+    """写一行数据"""
+    for col_idx, col_name in enumerate(all_cols, 1):
+        if col_name in NON_MONTH_COLS:
+            if is_price_row:
+                continue  # 均价行非月份列留空（合并后自动继承上册值）
+            df_col = col_name if col_name in row_data else (
+                '面积范围' if col_name == '户型面积' else None)
+            if df_col:
+                value = row_data.get(df_col, '')
+            else:
+                value = row_data.get(col_name, '')
+        else:
+            # 月份列
+            value = row_data.get(col_name, '')
+
+        if value is None:
+            value = ''
+
+        fmt = None
+        if col_name in PCT_COLS and isinstance(value, (int, float)) and value != '':
+            fmt = '0%'
+        if '均价' in col_name and isinstance(value, (int, float)):
+            fmt = '#,##0'
+        if col_name == '近3月月均销量' and isinstance(value, (int, float)):
+            fmt = '0'
+
+        _write_cell(ws, excel_row, col_idx, value, fmt=fmt)
 
 
 def generate_excel(
@@ -34,158 +102,127 @@ def generate_excel(
     total_avg_price: str = '',
     monthly_total_prices: dict = None,
 ) -> str:
-    """生成户型盘点 Excel 文件"""
+    """生成户型盘点 Excel（每个户型 2 行）"""
     wb = Workbook()
     ws = wb.active
     ws.title = project_name[:31]
 
-    # 列定义（按模板顺序）
-    base_cols = ['板块', '竞品', '业态', '编码', '户型', '户型面积', '建面分段',
-                 '整盘套数', '户配', '供应套数', '成交套数', '成交均价',
-                 '整盘去化率', '已供去化率', '已供去化占比']
-    month_cols = list(month_labels)
-    trailing_cols = ['近3月月均销量', '近3月月均销量占比', '已取证库存', '整盘库存']
+    if monthly_total_prices is None:
+        monthly_total_prices = {}
+
+    base_cols = _make_base_cols()
+    month_cols = _make_month_cols(month_labels)
+    trailing_cols = _make_trailing_cols()
     all_cols = base_cols + month_cols + trailing_cols
 
     # === 表头 ===
     for col_idx, col_name in enumerate(all_cols, 1):
-        cell = ws.cell(row=1, column=col_idx, value=col_name)
-        cell.font = HEADER_FONT
-        cell.fill = HEADER_FILL
-        cell.alignment = CENTER_WRAP
-        cell.border = THIN_BORDER
+        _write_cell(ws, 1, col_idx, col_name, font=HEADER_FONT)
+        ws.cell(row=1, column=col_idx).fill = HEADER_FILL
 
-    # === 数据行 ===
-    df_col_map = {
-        '板块': '板块', '竞品': '竞品', '业态': '业态',
-        '编码': '编码', '户型': '户型', '户型面积': '面积范围',
-        '建面分段': '建面分段', '整盘套数': '整盘套数', '户配': '户配',
-        '供应套数': '供应套数', '成交套数': '成交套数', '成交均价': '成交均价',
-        '整盘去化率': '整盘去化率', '已供去化率': '已供去化率',
-        '已供去化占比': '已供去化占比', '已取证库存': '已取证库存',
-        '整盘库存': '整盘库存',
-        '近3月月均销量': '近3月月均销量', '近3月月均销量占比': '近3月月均销量占比',
-    }
+    # === 数据行（每户型 2 行）===
+    excel_row = 2
+    for _, row in df.iterrows():
+        # 上行：套数行（全部列有数据）
+        _write_data_row(ws, excel_row, all_cols, row, month_labels, is_price_row=False)
+        excel_row += 1
+        # 下行：均价行（仅月份列有数据）
+        _write_data_row(ws, excel_row, all_cols, row, month_labels, is_price_row=True)
 
-    pct_cols = {'户配', '整盘去化率', '已供去化率', '已供去化占比', '近3月月均销量占比'}
-
-    for row_idx, (_, row) in enumerate(df.iterrows()):
-        excel_row = row_idx + 2
-
+        # 合并非月份列的 2 行
         for col_idx, col_name in enumerate(all_cols, 1):
-            cell = ws.cell(row=excel_row, column=col_idx)
-            cell.border = THIN_BORDER
-            cell.alignment = CENTER_WRAP
-            cell.font = NORMAL_FONT
+            if col_name in NON_MONTH_COLS:
+                ws.merge_cells(start_row=excel_row - 1, start_column=col_idx,
+                               end_row=excel_row, end_column=col_idx)
 
-            if col_name in df_col_map:
-                value = row.get(df_col_map[col_name], '')
-            elif col_name in month_labels:
-                value = row.get(col_name, '')
-            else:
-                value = ''
+        excel_row += 1
 
-            cell.value = value
-
-
-            if col_name in pct_cols and isinstance(value, (int, float)) and value != '':
-                cell.number_format = '0%'  # 整数百分比
-
-            if '均价' in col_name and isinstance(value, (int, float)):
-                cell.number_format = '#,##0'
-
-            if col_name == '近3月月均销量' and isinstance(value, (int, float)):
-                cell.number_format = '0'
-
-    # === 合计行 ===
-    total_row = len(df) + 2
-
-    # 月度合计：上方=各户型成交套数之和，下方=该月截图合计行成交均价
-    if monthly_total_prices is None:
-        monthly_total_prices = {}
-    monthly_totals = {}
+    # === 合计行（2 行）===
+    total_row_start = excel_row
+    total_units_col = {}
+    total_price_col = {}
     for ml in month_labels:
-        month_units = 0
-        for _, row in df.iterrows():
-            val = row.get(ml, '')
-            if val and '\n' in str(val):
-                try:
-                    month_units += int(str(val).split('\n')[0])
-                except (ValueError, IndexError):
-                    pass
-        month_price = monthly_total_prices.get(ml, '')
-        monthly_totals[ml] = f"{month_units}\n{month_price}" if month_units else ''
+        total_units_col[ml] = sum(int(row.get(f"{ml}_套数", 0) or 0) for _, row in df.iterrows())
+        total_price_col[ml] = monthly_total_prices.get(ml, '')
 
-    total_values = {
-        '板块': '', '竞品': '', '业态': '',
-        '编码': '合计', '户型': '', '户型面积': '',
-        '建面分段': '-',
-        '整盘套数': project_total,
-        '户配': 1.0,
-        '供应套数': total_supply,
-        '成交套数': total_trans,
-        '成交均价': total_avg_price,
-        '整盘去化率': total_trans / project_total if project_total > 0 else 0,
-        '已供去化率': total_trans / total_supply if total_supply > 0 else 0,
-        '已供去化占比': '-',
-        '已取证库存': total_supply - total_trans,
-        '整盘库存': project_total - total_trans,
-        '近3月月均销量': round(df['近3月月均销量'].sum()) if '近3月月均销量' in df.columns else 0,
-        '近3月月均销量占比': '-',
-    }
-
+    # 上行：合计行套数
     for col_idx, col_name in enumerate(all_cols, 1):
-        cell = ws.cell(row=total_row, column=col_idx)
-        cell.border = THIN_BORDER
-        cell.alignment = CENTER_WRAP
-        cell.font = TOTAL_FONT
-
-        if col_name in total_values:
-            value = total_values[col_name]
-        elif col_name in month_labels:
-            value = monthly_totals.get(col_name, '')
-            cell.font = MONTHLY_TOTAL_FONT
+        if col_name in NON_MONTH_COLS:
+            val_map = {
+                '编码': '合计', '户型': '', '户型面积': '',
+                '建面分段': '-', '整盘套数': project_total, '户配': 1.0,
+                '供应套数': total_supply, '成交套数': total_trans,
+                '成交均价': total_avg_price,
+                '整盘去化率': total_trans / project_total if project_total > 0 else 0,
+                '已供去化率': total_trans / total_supply if total_supply > 0 else 0,
+                '已供去化占比': '-', '已取证库存': total_supply - total_trans,
+                '整盘库存': project_total - total_trans,
+                '近3月月均销量': round(df['近3月月均销量'].sum()) if '近3月月均销量' in df.columns else 0,
+                '近3月月均销量占比': '-',
+            }
+            value = val_map.get(col_name, '')
+            fmt = '0%' if col_name in PCT_COLS and isinstance(value, (int, float)) else None
         else:
-            value = ''
+            ml_key = col_name.replace('_套数', '').replace('_均价', '')
+            if '_套数' in col_name:
+                value = total_units_col.get(ml_key, 0)
+            else:
+                value = total_price_col.get(ml_key, '')
+            fmt = None
 
-        cell.value = value
+        _write_cell(ws, total_row_start, col_idx, value, font=TOTAL_FONT, fmt=fmt)
 
+    # 下行：合计行均价
+    total_row_end = total_row_start + 1
+    for col_idx, col_name in enumerate(all_cols, 1):
+        if col_name in NON_MONTH_COLS:
+            continue
+        else:
+            ml_key = col_name.replace('_套数', '').replace('_均价', '')
+            if '_均价' in col_name:
+                value = total_price_col.get(ml_key, '')
+            else:
+                continue  # 套数列留空
+            _write_cell(ws, total_row_end, col_idx, value, font=MONTHLY_TOTAL_FONT)
 
-        if col_name in pct_cols and isinstance(value, (int, float)):
-            cell.number_format = '0%'
+    # 合计行非月份列 2 行合并
+    for col_idx, col_name in enumerate(all_cols, 1):
+        if col_name in NON_MONTH_COLS:
+            ws.merge_cells(start_row=total_row_start, start_column=col_idx,
+                           end_row=total_row_end, end_column=col_idx)
 
-    # 合计行：编码、户型、户型面积 三列合并，显示"合计"
-    # 编码=第4列, 户型=第5列, 户型面积=第6列
+    # 合计行：编码+户型+户型面积三列合并
     code_col = all_cols.index('编码') + 1
     area_col = all_cols.index('户型面积') + 1
-    ws.merge_cells(start_row=total_row, start_column=code_col, end_row=total_row, end_column=area_col)
-    merged_cell = ws.cell(row=total_row, column=code_col)
-    merged_cell.value = '合计'
-    merged_cell.font = TOTAL_FONT
-    merged_cell.alignment = CENTER_WRAP
+    ws.merge_cells(start_row=total_row_start, start_column=code_col,
+                   end_row=total_row_end, end_column=area_col)
+    mc = ws.cell(row=total_row_start, column=code_col)
+    mc.value = '合计'
+    mc.font = TOTAL_FONT
+    mc.alignment = CENTER_WRAP
 
-    # === 合并板块列（所有数据行 + 合计行 → 一个单元格）===
+    # === 板块列合并 ===
     plate_col = all_cols.index('板块') + 1
     if plate:
-        ws.merge_cells(start_row=2, start_column=plate_col, end_row=total_row, end_column=plate_col)
-        c = ws.cell(row=2, column=plate_col)
-        c.value = plate
-        c.font = PLATE_FONT
+        ws.merge_cells(start_row=2, start_column=plate_col, end_row=total_row_end, end_column=plate_col)
+        pc = ws.cell(row=2, column=plate_col)
+        pc.value = plate
+        pc.font = PLATE_FONT
 
-    # === 合并竞品列（项目名称 + 开盘时间 + 容积率，换行分隔）===
+    # === 竞品列合并 ===
     competitor_col = all_cols.index('竞品') + 1
     competitor_content = project_name
     if open_date:
         competitor_content += f"\n{open_date}"
     if plot_ratio:
         competitor_content += f"\n{plot_ratio}"
-    ws.merge_cells(start_row=2, start_column=competitor_col, end_row=total_row, end_column=competitor_col)
-    c = ws.cell(row=2, column=competitor_col)
-    c.value = competitor_content
-    c.font = COMPETITOR_FONT
+    ws.merge_cells(start_row=2, start_column=competitor_col, end_row=total_row_end, end_column=competitor_col)
+    cc = ws.cell(row=2, column=competitor_col)
+    cc.value = competitor_content
+    cc.font = COMPETITOR_FONT
 
     # === 列宽 ===
-    col_widths = {
+    base_widths = {
         '板块': 8, '竞品': 10, '业态': 12, '编码': 10, '户型': 10,
         '户型面积': 10, '建面分段': 12, '整盘套数': 10, '户配': 8,
         '供应套数': 10, '成交套数': 10, '成交均价': 10,
@@ -194,8 +231,8 @@ def generate_excel(
         '近3月月均销量': 12, '近3月月均销量占比': 12,
     }
     for col_idx, col_name in enumerate(all_cols, 1):
-        width = col_widths.get(col_name, 14)
-        ws.column_dimensions[get_column_letter(col_idx)].width = width
+        w = base_widths.get(col_name, 10)
+        ws.column_dimensions[get_column_letter(col_idx)].width = w
 
     ws.freeze_panes = 'A2'
     wb.save(output_path)
@@ -203,13 +240,8 @@ def generate_excel(
 
 
 def generate_multi_sheet_excel(all_results: list[dict], output_path: str) -> str:
-    """
-    生成单 Sheet Excel（所有项目共用表头，顺序堆叠）
-
-    每个项目的数据块：数据行 + 合计行 + 空行分隔
-    """
+    """批量多项目输出，共用一个 Sheet，按 2 行格式"""
     from openpyxl import Workbook
-
     wb = Workbook()
     ws = wb.active
     ws.title = "户型盘点"
@@ -218,138 +250,108 @@ def generate_multi_sheet_excel(all_results: list[dict], output_path: str) -> str
         wb.save(output_path)
         return output_path
 
-    # 取第一个项目的月份标签作为列定义
     first = all_results[0]
     month_labels = first['month_labels']
-    base_cols = ['板块', '竞品', '业态', '编码', '户型', '户型面积', '建面分段',
-                 '整盘套数', '户配', '供应套数', '成交套数', '成交均价',
-                 '整盘去化率', '已供去化率', '已供去化占比']
-    trailing_cols = ['近3月月均销量', '近3月月均销量占比', '已取证库存', '整盘库存']
-    all_cols = base_cols + list(month_labels) + trailing_cols
-    pct_cols = {'户配', '整盘去化率', '已供去化率', '已供去化占比', '近3月月均销量占比'}
+    base_cols = _make_base_cols()
+    month_cols = _make_month_cols(month_labels)
+    trailing_cols = _make_trailing_cols()
+    all_cols = base_cols + month_cols + trailing_cols
 
-    # === 写表头（仅一次）===
+    # 表头
     for col_idx, col_name in enumerate(all_cols, 1):
-        cell = ws.cell(row=1, column=col_idx, value=col_name)
-        cell.font = HEADER_FONT
-        cell.fill = HEADER_FILL
-        cell.alignment = CENTER_WRAP
-        cell.border = THIN_BORDER
+        _write_cell(ws, 1, col_idx, col_name, font=HEADER_FONT)
+        ws.cell(row=1, column=col_idx).fill = HEADER_FILL
 
-    current_row = 2  # 当前写入行
+    current_row = 2
 
     for proj_idx, result in enumerate(all_results):
         df = result['df']
-        total_supply = result['total_supply']
-        total_trans = result['total_trans']
-        project_total = result['project_total']
         project_name = result['project_name']
         plate = result.get('plate', '')
         open_date = result.get('open_date', '')
         plot_ratio = result.get('plot_ratio', '')
+        total_supply = result['total_supply']
+        total_trans = result['total_trans']
+        project_total = result['project_total']
         total_avg_price = result.get('total_avg_price', '')
         monthly_total_prices = result.get('monthly_total_prices', {})
+        if monthly_total_prices is None:
+            monthly_total_prices = {}
 
-        df_col_map = {
-            '板块': '板块', '竞品': '竞品', '业态': '业态',
-            '编码': '编码', '户型': '户型', '户型面积': '面积范围',
-            '建面分段': '建面分段', '整盘套数': '整盘套数', '户配': '户配',
-            '供应套数': '供应套数', '成交套数': '成交套数', '成交均价': '成交均价',
-            '整盘去化率': '整盘去化率', '已供去化率': '已供去化率',
-            '已供去化占比': '已供去化占比', '已取证库存': '已取证库存',
-            '整盘库存': '整盘库存',
-            '近3月月均销量': '近3月月均销量', '近3月月均销量占比': '近3月月均销量占比',
-        }
+        data_start = current_row
 
         # 数据行
-        data_start = current_row
         for _, row in df.iterrows():
+            _write_data_row(ws, current_row, all_cols, row, month_labels, is_price_row=False)
+            current_row += 1
+            _write_data_row(ws, current_row, all_cols, row, month_labels, is_price_row=True)
             for col_idx, col_name in enumerate(all_cols, 1):
-                cell = ws.cell(row=current_row, column=col_idx)
-                cell.border = THIN_BORDER
-                cell.alignment = CENTER_WRAP
-                cell.font = NORMAL_FONT
-
-                if col_name in df_col_map:
-                    value = row.get(df_col_map[col_name], '')
-                elif col_name in month_labels:
-                    value = row.get(col_name, '')
-                else:
-                    value = ''
-
-                cell.value = value
-                if col_name in pct_cols and isinstance(value, (int, float)) and value != '':
-                    cell.number_format = '0%'
-                if '均价' in col_name and isinstance(value, (int, float)):
-                    cell.number_format = '#,##0'
-                if col_name == '近3月月均销量' and isinstance(value, (int, float)):
-                    cell.number_format = '0'
+                if col_name in NON_MONTH_COLS:
+                    ws.merge_cells(start_row=current_row - 1, start_column=col_idx,
+                                   end_row=current_row, end_column=col_idx)
             current_row += 1
 
         # 合计行
-        total_row = current_row
-        monthly_totals = {}
+        total_row_start = current_row
+        total_units_col = {}
+        total_price_col = {}
         for ml in month_labels:
-            month_units = 0
-            for _, row in df.iterrows():
-                val = row.get(ml, '')
-                if val and '\n' in str(val):
-                    try:
-                        month_units += int(str(val).split('\n')[0])
-                    except (ValueError, IndexError):
-                        pass
-            month_price = monthly_total_prices.get(ml, '')
-            monthly_totals[ml] = f"{month_units}\n{month_price}" if month_units else ''
-
-        total_values = {
-            '板块': '', '竞品': '', '业态': '',
-            '编码': '合计', '户型': '', '户型面积': '',
-            '建面分段': '-',
-            '整盘套数': project_total,
-            '户配': 1.0,
-            '供应套数': total_supply,
-            '成交套数': total_trans,
-            '成交均价': total_avg_price,
-            '整盘去化率': total_trans / project_total if project_total > 0 else 0,
-            '已供去化率': total_trans / total_supply if total_supply > 0 else 0,
-            '已供去化占比': '-',
-            '已取证库存': total_supply - total_trans,
-            '整盘库存': project_total - total_trans,
-            '近3月月均销量': round(df['近3月月均销量'].sum()) if '近3月月均销量' in df.columns else 0,
-            '近3月月均销量占比': '-',
-        }
+            total_units_col[ml] = sum(int(row.get(f"{ml}_套数", 0) or 0) for _, row in df.iterrows())
+            total_price_col[ml] = monthly_total_prices.get(ml, '')
 
         for col_idx, col_name in enumerate(all_cols, 1):
-            cell = ws.cell(row=total_row, column=col_idx)
-            cell.border = THIN_BORDER
-            cell.alignment = CENTER_WRAP
-            cell.font = TOTAL_FONT
-
-            if col_name in total_values:
-                value = total_values[col_name]
-            elif col_name in month_labels:
-                value = monthly_totals.get(col_name, '')
-                cell.font = MONTHLY_TOTAL_FONT
+            if col_name in NON_MONTH_COLS:
+                val_map = {
+                    '编码': '合计', '户型': '', '户型面积': '',
+                    '建面分段': '-', '整盘套数': project_total, '户配': 1.0,
+                    '供应套数': total_supply, '成交套数': total_trans,
+                    '成交均价': total_avg_price,
+                    '整盘去化率': total_trans / project_total if project_total > 0 else 0,
+                    '已供去化率': total_trans / total_supply if total_supply > 0 else 0,
+                    '已供去化占比': '-', '已取证库存': total_supply - total_trans,
+                    '整盘库存': project_total - total_trans,
+                    '近3月月均销量': round(df['近3月月均销量'].sum()) if '近3月月均销量' in df.columns else 0,
+                    '近3月月均销量占比': '-',
+                }
+                value = val_map.get(col_name, '')
+                fmt = '0%' if col_name in PCT_COLS and isinstance(value, (int, float)) else None
             else:
-                value = ''
+                ml_key = col_name.replace('_套数', '').replace('_均价', '')
+                if '_套数' in col_name:
+                    value = total_units_col.get(ml_key, 0)
+                else:
+                    value = total_price_col.get(ml_key, '')
+                fmt = None
+            _write_cell(ws, total_row_start, col_idx, value, font=TOTAL_FONT, fmt=fmt)
 
-            cell.value = value
-            if col_name in pct_cols and isinstance(value, (int, float)):
-                cell.number_format = '0%'
+        total_row_end = total_row_start + 1
+        for col_idx, col_name in enumerate(all_cols, 1):
+            if col_name in NON_MONTH_COLS:
+                continue
+            ml_key = col_name.replace('_套数', '').replace('_均价', '')
+            if '_均价' in col_name:
+                value = total_price_col.get(ml_key, '')
+                _write_cell(ws, total_row_end, col_idx, value, font=MONTHLY_TOTAL_FONT)
 
-        # 合计行：编码+户型+户型面积合并
+        for col_idx, col_name in enumerate(all_cols, 1):
+            if col_name in NON_MONTH_COLS:
+                ws.merge_cells(start_row=total_row_start, start_column=col_idx,
+                               end_row=total_row_end, end_column=col_idx)
+
         code_col = all_cols.index('编码') + 1
         area_col = all_cols.index('户型面积') + 1
-        ws.merge_cells(start_row=total_row, start_column=code_col, end_row=total_row, end_column=area_col)
-        mc = ws.cell(row=total_row, column=code_col)
+        ws.merge_cells(start_row=total_row_start, start_column=code_col,
+                       end_row=total_row_end, end_column=area_col)
+        mc = ws.cell(row=total_row_start, column=code_col)
         mc.value = '合计'
         mc.font = TOTAL_FONT
         mc.alignment = CENTER_WRAP
 
-        # 板块列合并（本项目的数据行 + 合计行）
+        # 板块列合并（本项目数据行 + 合计行）
         plate_col = all_cols.index('板块') + 1
         if plate:
-            ws.merge_cells(start_row=data_start, start_column=plate_col, end_row=total_row, end_column=plate_col)
+            ws.merge_cells(start_row=data_start, start_column=plate_col,
+                           end_row=total_row_end, end_column=plate_col)
             pc = ws.cell(row=data_start, column=plate_col)
             pc.value = plate
             pc.font = PLATE_FONT
@@ -361,19 +363,18 @@ def generate_multi_sheet_excel(all_results: list[dict], output_path: str) -> str
             competitor_content += f"\n{open_date}"
         if plot_ratio:
             competitor_content += f"\n{plot_ratio}"
-        ws.merge_cells(start_row=data_start, start_column=competitor_col, end_row=total_row, end_column=competitor_col)
+        ws.merge_cells(start_row=data_start, start_column=competitor_col,
+                       end_row=total_row_end, end_column=competitor_col)
         cc = ws.cell(row=data_start, column=competitor_col)
         cc.value = competitor_content
         cc.font = COMPETITOR_FONT
 
-        current_row += 1  # 合计行之后
-
-        # 项目之间空一行分隔（最后一个项目不加）
+        current_row = total_row_end + 1
         if proj_idx < len(all_results) - 1:
-            current_row += 1
+            current_row += 1  # 项目间空行
 
     # 列宽
-    col_widths = {
+    base_widths = {
         '板块': 8, '竞品': 10, '业态': 12, '编码': 10, '户型': 10,
         '户型面积': 10, '建面分段': 12, '整盘套数': 10, '户配': 8,
         '供应套数': 10, '成交套数': 10, '成交均价': 10,
@@ -382,8 +383,8 @@ def generate_multi_sheet_excel(all_results: list[dict], output_path: str) -> str
         '近3月月均销量': 12, '近3月月均销量占比': 12,
     }
     for col_idx, col_name in enumerate(all_cols, 1):
-        width = col_widths.get(col_name, 14)
-        ws.column_dimensions[get_column_letter(col_idx)].width = width
+        w = base_widths.get(col_name, 10)
+        ws.column_dimensions[get_column_letter(col_idx)].width = w
 
     ws.freeze_panes = 'A2'
     wb.save(output_path)

@@ -55,8 +55,9 @@ def calculate_all(
     # 新增：整盘库存 = 整盘套数 - 成交套数
     df["整盘库存"] = df["整盘套数"] - df["成交套数"]
 
-    # 月度数据
+    # 月度数据：每个月份拆为两列（套数 + 均价）
     monthly_units_list = []
+    monthly_price_list = []
     for ml in month_labels:
         m_df = monthly_data.get(ml, pd.DataFrame())
         if not m_df.empty and "编码" in m_df.columns:
@@ -70,19 +71,19 @@ def calculate_all(
             if code in m_index:
                 m_row = m_index[code]
                 units_col.append(int(m_row.get("成交套数", 0)))
-                price_col.append(m_row.get("成交均价", ''))
+                p = m_row.get("成交均价", 0)
+                try:
+                    price_col.append(int(float(p)) if p else 0)
+                except (ValueError, TypeError):
+                    price_col.append(0)
             else:
                 units_col.append(0)
-                price_col.append('')
+                price_col.append(0)
 
-        combined = []
-        for u, p in zip(units_col, price_col):
-            u_str = str(u) if u else '0'
-            p_str = str(int(p)) if p and str(p) != 'nan' and p != '' else '-'
-            combined.append(f"{u_str}\n{p_str}")
-
-        df[ml] = combined
+        df[f"{ml}_套数"] = units_col
+        df[f"{ml}_均价"] = price_col
         monthly_units_list.append(units_col)
+        monthly_price_list.append(price_col)
 
     # 近3月月均销量
     if monthly_units_list:

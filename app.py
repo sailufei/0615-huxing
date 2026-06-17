@@ -183,7 +183,8 @@ def process_images(
                 '整盘库存': int(row.get('整盘库存', 0)),
             }
             for ml in month_labels:
-                r[ml] = row.get(ml, '')
+                r[f"{ml}_套数"] = int(row.get(f"{ml}_套数", 0))
+                r[f"{ml}_均价"] = int(row.get(f"{ml}_均价", 0)) if row.get(f"{ml}_均价", 0) else ''
             r['近3月月均销量'] = round(float(row.get('近3月月均销量', 0)), 1)
             r['近3月月均销量占比'] = round(float(row.get('近3月月均销量占比', 0)), 4)
             preview_rows.append(r)
@@ -576,7 +577,8 @@ def process_single_project(
             '整盘库存': int(row.get('整盘库存', 0)),
         }
         for ml in month_labels:
-            r[ml] = row.get(ml, '')
+            r[f"{ml}_套数"] = int(row.get(f"{ml}_套数", 0))
+            r[f"{ml}_均价"] = int(row.get(f"{ml}_均价", 0)) if row.get(f"{ml}_均价", 0) else ''
         r['近3月月均销量'] = round(float(row.get('近3月月均销量', 0)), 1)
         r['近3月月均销量占比'] = round(float(row.get('近3月月均销量占比', 0)), 2)
         preview_rows.append(r)
