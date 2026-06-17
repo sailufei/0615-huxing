@@ -12,7 +12,7 @@ def calculate_all(
     df = merged_supply.copy()
     trans_index = {r["编码"]: r for _, r in merged_transaction.iterrows()}
 
-    # 成交字段
+    # 成交字段（全部用数字填充，避免 str/float 类型冲突）
     for code in df["编码"]:
         if code in trans_index:
             t = trans_index[code]
@@ -22,10 +22,11 @@ def calculate_all(
         else:
             df.loc[df["编码"] == code, "成交套数"] = 0
             df.loc[df["编码"] == code, "成交面积"] = 0
-            df.loc[df["编码"] == code, "成交均价"] = ''
+            df.loc[df["编码"] == code, "成交均价"] = 0
 
     df["成交套数"] = pd.to_numeric(df["成交套数"], errors='coerce').fillna(0).astype(int)
     df["成交面积"] = pd.to_numeric(df["成交面积"], errors='coerce').fillna(0)
+    df["成交均价"] = pd.to_numeric(df["成交均价"], errors='coerce').fillna(0)
 
     total_supply = int(df["供应套数"].sum())
     total_trans = int(df["成交套数"].sum())
