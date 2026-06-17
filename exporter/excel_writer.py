@@ -37,12 +37,8 @@ def _make_trailing_cols():
 
 
 def _make_month_cols(month_labels):
-    """每个月份拆为 2 列：套数 + 均价"""
-    cols = []
-    for ml in month_labels:
-        cols.append(f"{ml}_套数")
-        cols.append(f"{ml}_均价")
-    return cols
+    """每月 1 列，数据分两行（上=套数，下=均价）"""
+    return list(month_labels)
 
 
 def _write_cell(ws, row, col, value, font=None, fmt=None, merge_info=None):
@@ -62,16 +58,13 @@ def _write_data_row(ws, excel_row, all_cols, row_data, month_labels, is_price_ro
     for col_idx, col_name in enumerate(all_cols, 1):
         if col_name in NON_MONTH_COLS:
             if is_price_row:
-                continue  # 均价行非月份列留空（合并后自动继承上册值）
-            df_col = col_name if col_name in row_data else (
-                '面积范围' if col_name == '户型面积' else None)
-            if df_col:
-                value = row_data.get(df_col, '')
-            else:
-                value = row_data.get(col_name, '')
+                continue
+            df_col = '面积范围' if col_name == '户型面积' else col_name
+            value = row_data.get(df_col, row_data.get(col_name, ''))
         else:
-            # 月份列
-            value = row_data.get(col_name, '')
+            # 月份列：上行取套数，下行取均价
+            suffix = '_均价' if is_price_row else '_套数'
+            value = row_data.get(f"{col_name}{suffix}", '')
 
         if value is None:
             value = ''
@@ -163,13 +156,8 @@ def generate_excel(
             value = val_map.get(col_name, '')
             fmt = '0%' if col_name in PCT_COLS and isinstance(value, (int, float)) else None
         else:
-            ml_key = col_name.replace('_套数', '').replace('_均价', '')
-            if '_套数' in col_name:
-                value = total_units_col.get(ml_key, 0)
-            else:
-                value = total_price_col.get(ml_key, '')
+            value = total_units_col.get(col_name, 0)
             fmt = None
-
         _write_cell(ws, total_row_start, col_idx, value, font=TOTAL_FONT, fmt=fmt)
 
     # 下行：合计行均价
@@ -177,13 +165,8 @@ def generate_excel(
     for col_idx, col_name in enumerate(all_cols, 1):
         if col_name in NON_MONTH_COLS:
             continue
-        else:
-            ml_key = col_name.replace('_套数', '').replace('_均价', '')
-            if '_均价' in col_name:
-                value = total_price_col.get(ml_key, '')
-            else:
-                continue  # 套数列留空
-            _write_cell(ws, total_row_end, col_idx, value, font=MONTHLY_TOTAL_FONT)
+        value = total_price_col.get(col_name, '')
+        _write_cell(ws, total_row_end, col_idx, value, font=MONTHLY_TOTAL_FONT)
 
     # 合计行非月份列 2 行合并
     for col_idx, col_name in enumerate(all_cols, 1):
@@ -316,11 +299,7 @@ def generate_multi_sheet_excel(all_results: list[dict], output_path: str) -> str
                 value = val_map.get(col_name, '')
                 fmt = '0%' if col_name in PCT_COLS and isinstance(value, (int, float)) else None
             else:
-                ml_key = col_name.replace('_套数', '').replace('_均价', '')
-                if '_套数' in col_name:
-                    value = total_units_col.get(ml_key, 0)
-                else:
-                    value = total_price_col.get(ml_key, '')
+                value = total_units_col.get(col_name, 0)
                 fmt = None
             _write_cell(ws, total_row_start, col_idx, value, font=TOTAL_FONT, fmt=fmt)
 
@@ -328,10 +307,8 @@ def generate_multi_sheet_excel(all_results: list[dict], output_path: str) -> str
         for col_idx, col_name in enumerate(all_cols, 1):
             if col_name in NON_MONTH_COLS:
                 continue
-            ml_key = col_name.replace('_套数', '').replace('_均价', '')
-            if '_均价' in col_name:
-                value = total_price_col.get(ml_key, '')
-                _write_cell(ws, total_row_end, col_idx, value, font=MONTHLY_TOTAL_FONT)
+            value = total_price_col.get(col_name, '')
+            _write_cell(ws, total_row_end, col_idx, value, font=MONTHLY_TOTAL_FONT)
 
         for col_idx, col_name in enumerate(all_cols, 1):
             if col_name in NON_MONTH_COLS:

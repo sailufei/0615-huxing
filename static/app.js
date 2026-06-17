@@ -422,11 +422,10 @@ function showLoadedResult(data) {
 
   const manualCols = new Set(['板块', '竞品', '业态']);
   const monthLabels = data.data.month_labels || [];
-  const monthSubCols = monthLabels.flatMap(ml => [`${ml}_套数`, `${ml}_均价`]);
   const columns = ['板块','竞品','业态','编码','户型','户型面积','建面分段',
     '整盘套数','户配','供应套数','成交套数','成交均价',
     '整盘去化率','已供去化率','已供去化占比',
-    ...monthSubCols,
+    ...monthLabels,
     '近3月月均销量','近3月月均销量占比','已取证库存','整盘库存'];
 
   const thead = document.querySelector('#resultTable thead');
