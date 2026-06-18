@@ -262,18 +262,23 @@ async def process_batch(request: Request):
             supply_file = form.get(f"supply_{idx}")
             trans_file = form.get(f"transaction_{idx}")
 
-            if not supply_file or not trans_file:
-                all_errors.append(f"项目{idx+1}: 缺少必填截图")
+            if not supply_file:
+                all_errors.append(f"项目{idx+1}: 缺少供应截图（必须）")
                 continue
 
             supply_path = task_dir / f"supply_{idx}{Path(supply_file.filename).suffix}"
             with open(supply_path, "wb") as f:
                 f.write(await supply_file.read())
 
-            trans_path = task_dir / f"trans_{idx}{Path(trans_file.filename).suffix}"
-            with open(trans_path, "wb") as f:
-                f.write(await trans_file.read())
+            # 成交截图（可选）
+            trans_path = ""
+            if trans_file:
+                trans_path = task_dir / f"trans_{idx}{Path(trans_file.filename).suffix}"
+                with open(trans_path, "wb") as f:
+                    f.write(await trans_file.read())
+                trans_path = str(trans_path)
 
+            # 月度截图（可选）
             month_images = []
             month_labels = []
             mi = 0
@@ -288,10 +293,6 @@ async def process_batch(request: Request):
                 month_images.append((m_label, str(m_path)))
                 month_labels.append(m_label)
                 mi += 1
-
-            if not month_labels:
-                all_errors.append(f"项目{idx+1}({proj_name}): 缺少月度截图")
-                continue
 
             try:
                 proj_result = process_single_project(
@@ -519,15 +520,19 @@ def process_single_project(
     month_images: list, month_labels: list,
 ) -> dict:
     """处理单个项目，返回 {df, total_supply, total_trans, project_total, preview}"""
-    # OCR
+    # OCR 供应（必须）
     supply_raw = ocr_engine.extract_table(supply_path, "supply")
-    trans_raw = ocr_engine.extract_table(trans_path, "transaction")
-
-    # 数据清洗：过滤空行，强制数值转换（覆盖所有路径）
     supply_raw = _sanitize_rows(supply_raw, ['供应套数'])
-    trans_raw = _sanitize_rows(trans_raw, ['成交套数', '成交面积', '成交均价'])
-    total_avg_price = get_total_price(trans_raw)
 
+    # OCR 成交（可选）
+    total_avg_price = ''
+    trans_raw = []
+    if trans_path:
+        trans_raw = ocr_engine.extract_table(trans_path, "transaction")
+        trans_raw = _sanitize_rows(trans_raw, ['成交套数', '成交面积', '成交均价'])
+        total_avg_price = get_total_price(trans_raw)
+
+    # OCR 月度（可选）
     monthly_raw = {}
     monthly_total_prices = {}
     for label, path in month_images:
@@ -537,7 +542,7 @@ def process_single_project(
 
     # 解析
     supply_df = parse_to_dataframe(supply_raw, "supply")
-    trans_df = parse_to_dataframe(trans_raw, "transaction")
+    trans_df = parse_to_dataframe(trans_raw, "transaction") if trans_raw else pd.DataFrame()
     monthly_dfs = {label: parse_to_dataframe(raw, "transaction") for label, raw in monthly_raw.items()}
 
     # 合并

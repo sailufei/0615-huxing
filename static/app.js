@@ -135,9 +135,7 @@ function collectForm() {
 function saveProject() {
   const data = collectForm();
   if (!data.name) { alert('请输入项目名称'); return; }
-  if (!data.supplyFile) { alert('请上传整盘供应截图'); return; }
-  if (!data.transFile) { alert('请上传整盘成交截图'); return; }
-  if (data.monthlyFiles.length === 0) { alert('请至少填写1个月份标签并上传截图'); return; }
+  if (!data.supplyFile) { alert('请上传整盘供应截图（必须）'); return; }
 
   if (editingIndex >= 0) {
     projectQueue[editingIndex] = data;
